@@ -1,0 +1,8 @@
+.Rhistory
+global_rad_data
+snowdepth_data
+*.pdf
+srtm_39_03.*
+srtm_40_03.*
+apolis.nc
+gadm41_AUT_2.json
