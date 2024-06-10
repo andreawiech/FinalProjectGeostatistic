@@ -27,8 +27,8 @@ library("raster")
 
 ```{r}
 # set working directory
-setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
-#setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
+#setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
+setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
 ```
 
 ### Get political boundary data (GADM)
@@ -70,7 +70,27 @@ After we spent quite some time to download the data correctly and to create a fi
 filename <- "snowdepthdata.rds"
 df <-readRDS(filename)
 head(df)
-df$alt <- df$station_altitude
+```
+
+### Further data prep
+```{r}
+colnames(df)[which(colnames(df) == "latitude")] <- "lon" 
+colnames(df)[which(colnames(df) == "longitude")] <- "lat"
+colnames(df)[which(colnames(df) == "station_altitude")] <- "alt"
+df <- subset(df, select = -c(station_number))
+
+# Define the location for the tensor spline (47.6 N, 10 E)
+reference_lat <- 47.6
+reference_lon <- 10.0
+
+df <- df %>%
+  mutate(
+    lat_dist_km = (lat - reference_lat) * (pi / 180) * 6371,
+    lon_dist_km = (lon - reference_lon) * (pi / 180) * 6371 * cos(reference_lat * pi / 180)
+  )
+
+
+head(df)
 ```
 **Extract the names of all stations**
 ```{r}
@@ -85,9 +105,34 @@ df$yday <- as.POSIXlt(df$date)$yday
 ```
 
 ```{r}
-SnowModell <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr"), data = df)
+SnowModellsimpl <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+                    s(lat, lon, bs =("tp"), k = 5), data = df)
+
+
+summary(SnowModellsimpl)
+par(mfrow = c(1,2))
+plot.gam(SnowModellsimpl)
+```
+
+```{r}
+SnowModell <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+                    s(lat, lon, bs = "tp") +
+                    ti(lat_dist_km, lon_dist_km, bs = c("tp","tp"), k = c(20,20)), data = df)
+
+
+summary(SnowModell)
 par(mfrow = c(1,2))
 plot.gam(SnowModell)
+```
+```{r}
+SnowModell_rad <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+                    s(lat, lon, bs = "tp") +
+                    te(lat_dist_km, lon_dist_km, bs = "tp") +
+                    s(globrad, k=5 ,bs = "cr"),
+                  data = df)
+summary(SnowModell_rad)
+par(mfrow = c(2,2))
+plot.gam(SnowModell_rad)
 ```
 ```{r}
 dem <- readRDS("dem.rds")
@@ -108,12 +153,19 @@ newdata <- as.data.frame(coordinates(dem))
 names(newdata) <- c("lon","lat")
 newdata$alt <- values(dem)
 newdata <- newdata[take, ]
+newdata <- newdata %>%
+  mutate(
+    lat_dist_km = (lat - reference_lat) * (pi / 180) * 6371,
+    lon_dist_km = (lon - reference_lon) * (pi / 180) * 6371 * cos(reference_lat * pi / 180)
+  )
+#also calculate the long and lateral distance 
+head(newdata)
 ```
 
 ```{r}
 date <- as.POSIXlt("2019-12-01")
 newdata$yday <- date$yday
-Smodel <- predict(SnowModell, newdata = newdata)
+Smodelsimpl <- predict(SnowModellsimpl, newdata = newdata)
 ```
 
 ```{r}
@@ -123,31 +175,29 @@ res <- stack(res)
 names(res) <- c("snowdepth")
 
 # Then store the estimates (predictions)
-values(res$snowdepth)[take] <- Smodel
+values(res$snowdepth)[take] <- Smodelsimpl
 ```
 
 ```{r}
 plot(res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
 ```
-
+### Difference for 24h and 48 h
 ```{r}
-
-tirol <- raster(tirol)
-dem <- raster(dem$srtm_39_03.tif)
-crs_tirol <- crs(tirol)
-crs(dem) <- crs_tirol
-dem <- raster(dem)
-dem <- projectRaster(dem, crs = crs(tirol))
-```
-```{r}
-extent(tirol)
-extent(dem) <- extent(10, 15, 45, 50)
-extent(dem)
-```
-```{r}
-date <- as.POSIXlt("2019-12-01")
+date <- as.POSIXlt("2019-12-02")
 newdata$yday <- date$yday
-Smodel <- predict(SnowModell, newdata = newdata)
+Smodelsimpl24 <- predict(SnowModellsimpl, newdata = newdata)
 ```
 
+```{r}
+res <- dem
+values(res) <- NA #initialize
+res <- stack(res)
+names(res) <- c("snowdepth24")
 
+# Then store the estimates (predictions)
+values(res$snowdepth24)[take] <- Smodelsimpl24
+```
+
+```{r}
+plot(res$snowdepth24 - res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
+```
