@@ -13,10 +13,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # import libraies
-library(stars)
-library(ggplot2)
-library(dplyr)
-library(lubridate)
+library("stars")
+library("ggplot2")
+library("dplyr")
+library("lubridate")
+
+library("zoo")
+library("colorspace")
+library("mgcv")
+library("raster")
 ```
 
 
@@ -30,7 +35,7 @@ setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/Fin
 
 ```{r}
 # Processing GADM data
-autBoundaries <- read_sf("gadm41_AUT_2.json")
+autBoundaries <- read_sf("gadm41_AUT_1.json")
 plot(st_geometry(autBoundaries)) # plot view base R
 ggplot() + geom_sf(data = autBoundaries, fill = "lightblue") # plot in "tidyverse"
 ```
@@ -62,7 +67,87 @@ After we spent quite some time to download the data correctly and to create a fi
 
 ### Read in the data
 ```{r}
-filename <- "snowdepthdata"
+filename <- "snowdepthdata.rds"
 df <-readRDS(filename)
+head(df)
+df$alt <- df$station_altitude
 ```
+**Extract the names of all stations**
+```{r}
+# Extract the names of all stations
+stations <- unique(df$station_name)
+stations
+```
+**Add day of year yday to df**
+
+```{r}
+df$yday <- as.POSIXlt(df$date)$yday
+```
+
+```{r}
+SnowModell <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr"), data = df)
+par(mfrow = c(1,2))
+plot.gam(SnowModell)
+```
+```{r}
+dem <- readRDS("dem.rds")
+tirol <- readRDS("tirol.gadm.rds")
+```
+
+```{r}
+plot(dem, col = gray.colors(51))
+plot(tirol, col = gray.colors(51))
+```
+
+```{r}
+dem <- crop(dem, extent(tirol))
+sp <- SpatialPoints(coordinates(dem), proj4string = crs(tirol))
+take <- which(!is.na(over(sp, tirol)))
+values(dem)[!take] <- NA
+newdata <- as.data.frame(coordinates(dem))
+names(newdata) <- c("lon","lat")
+newdata$alt <- values(dem)
+newdata <- newdata[take, ]
+```
+
+```{r}
+date <- as.POSIXlt("2019-12-01")
+newdata$yday <- date$yday
+Smodel <- predict(SnowModell, newdata = newdata)
+```
+
+```{r}
+res <- dem
+values(res) <- NA #initialize
+res <- stack(res)
+names(res) <- c("snowdepth")
+
+# Then store the estimates (predictions)
+values(res$snowdepth)[take] <- Smodel
+```
+
+```{r}
+plot(res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
+```
+
+```{r}
+
+tirol <- raster(tirol)
+dem <- raster(dem$srtm_39_03.tif)
+crs_tirol <- crs(tirol)
+crs(dem) <- crs_tirol
+dem <- raster(dem)
+dem <- projectRaster(dem, crs = crs(tirol))
+```
+```{r}
+extent(tirol)
+extent(dem) <- extent(10, 15, 45, 50)
+extent(dem)
+```
+```{r}
+date <- as.POSIXlt("2019-12-01")
+newdata$yday <- date$yday
+Smodel <- predict(SnowModell, newdata = newdata)
+```
+
 
