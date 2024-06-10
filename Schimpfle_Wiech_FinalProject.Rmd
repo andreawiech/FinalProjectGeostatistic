@@ -1,0 +1,68 @@
+---
+title: "snowdepth for stationdata only"
+author: "Schimpfle, Wiech"
+date: "2024-06-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+# import libraies
+library(stars)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+```
+
+
+```{r}
+# set working directory
+setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
+#setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
+```
+
+### Get political boundary data (GADM)
+
+```{r}
+# Processing GADM data
+autBoundaries <- read_sf("gadm41_AUT_2.json")
+plot(st_geometry(autBoundaries)) # plot view base R
+ggplot() + geom_sf(data = autBoundaries, fill = "lightblue") # plot in "tidyverse"
+```
+
+```{r}
+#To extract a state, e.g. Tirol, and:
+tirol <- subset(autBoundaries, NAME_1 == "Tirol")
+# plot tirol
+plot(st_geometry(tirol)) # plot view base R
+ggplot() + geom_sf(data = tirol, fill = "lightblue") # plot in "tidyverse"
+```
+
+### Get SRTM digital elevation model data (DEM)
+```{r}
+# Processing SRTM Data
+# Listing all unzipped srtm_*.tif files
+files <- list.files()
+files <- files[grepl("srtm_.*.tif$", files)]
+print(files)
+
+tmp <- lapply(files, read_stars)
+
+dem <- do.call(st_mosaic, tmp)
+st_crs(dem) <- st_crs(4326) # Adding lonlat coordinate reference
+plot(dem)
+```
+
+After we spent quite some time to download the data correctly and to create a file with which you can edit the Dyad task.
+
+### Read in the data
+```{r}
+filename <- "snowdepthdata"
+df <-readRDS(filename)
+```
+
