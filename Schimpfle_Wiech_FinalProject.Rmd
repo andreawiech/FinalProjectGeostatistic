@@ -186,18 +186,19 @@ plot(res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = spr
 date <- as.POSIXlt("2019-12-02")
 newdata$yday <- date$yday
 Smodelsimpl24 <- predict(SnowModellsimpl, newdata = newdata)
+snow_depth_diff <- Smodelsimpl24 - Smodelsimpl
 ```
 
 ```{r}
 res <- dem
 values(res) <- NA #initialize
 res <- stack(res)
-names(res) <- c("snowdepth24")
+names(res) <- c("snowdepth24diff")
 
 # Then store the estimates (predictions)
-values(res$snowdepth24)[take] <- Smodelsimpl24
+values(res$snowdepth24diff)[take] <- snow_depth_diff
 ```
 
 ```{r}
-plot(res$snowdepth24 - res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
+plot(res$snowdepth24diff, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
 ```
