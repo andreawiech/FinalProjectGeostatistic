@@ -1,0 +1,179 @@
+---
+title: "FinalProject"
+author: "Schimpfle, Wiech"
+date: "2024-06-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# import libraies
+library("stars")
+library("ggplot2")
+library("dplyr")
+library("lubridate")
+
+library("zoo")
+library("colorspace")
+library("mgcv")
+library("raster")
+library("sp")
+library("rjson")
+library("sf")
+```
+
+
+```{r}
+# set working directory
+wd <- ("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
+setwd(wd)
+#setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
+```
+
+### Get political boundary data (GADM)
+
+```{r}
+# Processing GADM data
+autBoundaries <- st_read("gadm41_AUT_1.json", type = 0001)
+plot(st_geometry(autBoundaries)) # plot view base R
+ggplot() + geom_sf(data = autBoundaries, fill = "lightblue") # plot in "tidyverse"
+```
+
+```{r}
+#To extract a state, e.g. Tirol, and:
+tirol <- subset(autBoundaries, NAME_1 == "Tirol")
+# plot tirol
+plot(st_geometry(tirol)) # plot view base R
+ggplot() + geom_sf(data = tirol, fill = "lightblue") # plot in "tidyverse"
+```
+```{r}
+
+tirol <- as_Spatial(tirol)
+```
+
+### Get SRTM digital elevation model data (DEM)
+```{r}
+# Processing SRTM Data
+# Listing all unzipped srtm_*.tif files
+files <- list.files()
+files <- files[grepl("srtm_.*.tif$", files)]
+print(files)
+
+tmp <- lapply(files, read_stars)
+
+dem <- do.call(st_mosaic, tmp)
+st_crs(dem) <- st_crs(4326) # Adding lonlat coordinate reference
+plot(dem)
+```
+```{r}
+DEM <- raster("srtm_39_03.tif")
+
+#raster(tirol)
+crs(DEM) <- "+proj=longlat +datum=WGS84 +no_defs"
+```
+
+```{r}
+dem <- crop(DEM, extent(tirol))
+
+#coordinates_data <- coordinates(dem)
+#crs_string <- "+proj=utm +zone=32 +datum=WGS84"
+#crs_obj <- CRS(crs_string)
+
+sp <- SpatialPoints(coordinates(dem), proj4string = tirol@proj4string)
+
+
+take <- which(!is.na(over(sp, tirol)))
+dem[!take] <- NA
+#values(dem)[!take] <- NA
+newdata <- as.data.frame(coordinates(dem))
+names(newdata) <- c("lon","lat")
+newdata$alt <- values(dem)
+newdata <- newdata[take, ]
+
+```
+
+### Read in the data
+```{r}
+filename <- "snowdepthdata.rds"
+df <-readRDS(filename)
+head(df)
+```
+### Further data prep
+```{r}
+colnames(df)[which(colnames(df) == "latitude")] <- "lon" 
+colnames(df)[which(colnames(df) == "longitude")] <- "lat"
+colnames(df)[which(colnames(df) == "station_altitude")] <- "alt"
+df <- subset(df, select = -c(station_number))
+
+# Define the location for the tensor spline (47.6 N, 10 E)
+reference_lat <- 47.6
+reference_lon <- 10.0
+
+df <- df %>%
+  mutate(
+    lat_dist_km = (lat - reference_lat) * (pi / 180) * 6371,
+    lon_dist_km = (lon - reference_lon) * (pi / 180) * 6371 * cos(reference_lat * pi / 180)
+  )
+
+
+head(df)
+```
+```{r}
+newdata <- newdata %>%
+  mutate(
+    lat_dist_km = (lat - reference_lat) * (pi / 180) * 6371,
+    lon_dist_km = (lon - reference_lon) * (pi / 180) * 6371 * cos(reference_lat * pi / 180)
+  )
+#also calculate the long and lateral distance 
+head(newdata)
+```
+
+
+```{r}
+SnowModellsimpl <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+                    s(lat, lon, bs =("tp"), k = 5), data = df)
+
+
+summary(SnowModellsimpl)
+par(mfrow = c(1,2))
+plot.gam(SnowModellsimpl)
+```
+```{r}
+SnowModell <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+                    s(lat, lon, bs = "tp") +
+                    ti(lat_dist_km, lon_dist_km, bs = c("tp","tp"), k = c(20,20)), data = df)
+
+
+summary(SnowModell)
+par(mfrow = c(1,2))
+plot.gam(SnowModell)
+```
+
+```{r}
+date <- as.POSIXlt("2023-11-17")
+newdata$yday <- date$yday
+Smodelsimpl <- predict(SnowModellsimpl, newdata = newdata)
+```
+
+
+```{r}
+res <- dem
+values(res) <- NA #initialize
+res <- stack(res)
+names(res) <- c("snowdepth")
+
+# Then store the estimates (predictions)
+values(res$snowdepth)[take] <- Smodelsimpl
+```
+```{r}
+# Then store the estimates (predictions)
+values(res$snowdepth)[take] <- Smodelsimpl
+```
+
+```{r}
+plot(res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
+```
