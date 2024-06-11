@@ -1,0 +1,64 @@
+---
+title: "connect dataframes"
+author: "Schimpfle, Wiech"
+date: "2024-06-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# import libraies
+library("stars")
+library("ggplot2")
+library("dplyr")
+library("lubridate")
+
+library("zoo")
+library("colorspace")
+library("mgcv")
+library("raster")
+```
+
+
+```{r}
+# set working directory
+setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
+#setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
+```
+
+```{r}
+map_data <- readRDS("newdata.rds")
+```
+
+```{r}
+raddata <- read.csv("testdata.csv", header = TRUE, sep = ",", stringsAsFactors=FALSE)
+```
+
+```{r}
+merged_df <- inner_join(map_data, raddata, by = c("lat", "lon"))
+
+```
+
+```{r}
+df1_clean <- map_data %>% filter(!is.na(lon) & !is.na(lat))
+df1_sf <- st_as_sf(df1_clean, coords = c("lon", "lat"), crs = 4326)
+```
+
+```{r}
+# Convert df2 to an sf object
+df2_sf <- st_as_sf(raddata, coords = c("lon", "lat"), crs = 4326)
+```
+
+```{r}
+joined_sf <- st_join(df1_sf, df2_sf, join = st_nearest_feature)
+
+# Convert back to a regular dataframe if needed
+joined_df <- as.data.frame(joined_sf)
+
+# Display the result
+print(joined_df)
+
+```
