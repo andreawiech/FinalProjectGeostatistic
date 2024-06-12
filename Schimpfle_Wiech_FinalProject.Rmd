@@ -10,9 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-
+### Imporlibraries
 ```{r}
-# import libraies
+# import libraries
 library("stars")
 library("ggplot2")
 library("dplyr")
@@ -24,28 +24,31 @@ library("mgcv")
 library("raster")
 ```
 
-
+### Set working directory
 ```{r}
 # set working directory
-#setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
-setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
+setwd("C:/Users/andre/OneDrive/Dokumente/UNI/Master_Semester_2/Geostatistics/FinalProject")
+#setwd("/Users/sschimpfle/Atmospärenwissenschaften/Geostatistic/Final_Project/FinalProjectGeostatistic")
 ```
 
 ### Get political boundary data (GADM)
-
 ```{r}
 # Processing GADM data
 autBoundaries <- read_sf("gadm41_AUT_1.json")
 plot(st_geometry(autBoundaries)) # plot view base R
 ggplot() + geom_sf(data = autBoundaries, fill = "lightblue") # plot in "tidyverse"
 ```
-
+### Extract Tirol
 ```{r}
 #To extract a state, e.g. Tirol, and:
 tirol <- subset(autBoundaries, NAME_1 == "Tirol")
 # plot tirol
 plot(st_geometry(tirol)) # plot view base R
 ggplot() + geom_sf(data = tirol, fill = "lightblue") # plot in "tidyverse"
+```
+```{r}
+# change class of tirol to be able to work with it
+tirol <- as_Spatial(tirol)
 ```
 
 ### Get SRTM digital elevation model data (DEM)
@@ -62,18 +65,27 @@ dem <- do.call(st_mosaic, tmp)
 st_crs(dem) <- st_crs(4326) # Adding lonlat coordinate reference
 plot(dem)
 ```
+```{r}
+DEM <- raster("srtm_39_03.tif")
+
+#raster(tirol)
+crs(DEM) <- "+proj=longlat +datum=WGS84 +no_defs"
+```
 
 After we spent quite some time to download the data correctly and to create a file with which you can edit the Dyad task.
 
-### Read in the data
+### Read Snowdepth data
 ```{r}
 filename <- "snowdepthdata.rds"
 df <-readRDS(filename)
 head(df)
 ```
 
-### Further data prep
+### Further snowdepthdata preperation
 ```{r}
+# Add day of year yday to tirolTdaily
+df$yday <- as.POSIXlt(df$date)$yday
+# rename some columns
 colnames(df)[which(colnames(df) == "latitude")] <- "lon" 
 colnames(df)[which(colnames(df) == "longitude")] <- "lat"
 colnames(df)[which(colnames(df) == "station_altitude")] <- "alt"
@@ -92,67 +104,69 @@ df <- df %>%
 
 head(df)
 ```
+
 **Extract the names of all stations**
 ```{r}
 # Extract the names of all stations
 stations <- unique(df$station_name)
 stations
 ```
-**Add day of year yday to df**
 
-```{r}
-df$yday <- as.POSIXlt(df$date)$yday
-```
+## Calculate different GAMs
 
+**GAM with snowdepth depending on yday, altitude, latitude and longitude**
 ```{r}
-SnowModellsimpl <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+SModA <- gam(mean_snow_depth ~ s(yday, k = 10, bs = "cc") + s(alt, k = 5, bs = "cr") +
                     s(lat, lon, bs =("tp"), k = 5), data = df)
 
 
-summary(SnowModellsimpl)
-par(mfrow = c(1,2))
-plot.gam(SnowModellsimpl)
+summary(SModA)
+par(mfrow = c(1,3))
+plot.gam(SModA)
 ```
-
+**GAM with snowdepth depending on ... **
 ```{r}
-SnowModell <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
-                    s(lat, lon, bs = "tp") +
-                    ti(lat_dist_km, lon_dist_km, bs = c("tp","tp"), k = c(20,20)), data = df)
+SModB <- gam(mean_snow_depth ~ s(yday, k = 10, bs = "cc") + s(alt, k = 5, bs = "cr") +
+                    s(lat, lon, bs = "tp") + s(globrad, k=5 ,bs = "cr"), data = df)
 
-
-summary(SnowModell)
-par(mfrow = c(1,2))
-plot.gam(SnowModell)
-```
-```{r}
-SnowModell_rad <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
-                    s(lat, lon, bs = "tp") +
-                    te(lat_dist_km, lon_dist_km, bs = "tp") +
-                    s(globrad, k=5 ,bs = "cr"),
-                  data = df)
-summary(SnowModell_rad)
+#ti(lat_dist_km, lon_dist_km, bs = c("tp","tp"), k = c(20,20))
+summary(SModB)
 par(mfrow = c(2,2))
-plot.gam(SnowModell_rad)
-```
-```{r}
-dem <- readRDS("dem.rds")
-tirol <- readRDS("tirol.gadm.rds")
+plot.gam(SModB)
 ```
 
 ```{r}
-plot(dem, col = gray.colors(51))
-plot(tirol, col = gray.colors(51))
+#SnowModell_rad <- gam(mean_snow_depth ~ s(alt, k = 5, bs = "cr") +
+                   # s(lat, lon, bs = "tp") +
+                    #te(lat_dist_km, lon_dist_km, bs = "tp") +
+                  #  s(globrad, k=5 ,bs = "cr"),
+                  #data = df)
+#summary(SnowModell_rad)
+#par(mfrow = c(2,2))
+#plot.gam(SnowModell_rad)
+```
+
+**Gridded snowdepth**
+```{r}
+#DEM <- raster("srtm_39_03.tif")
+
+#raster(tirol)
+#crs(DEM) <- "+proj=longlat +datum=WGS84 +no_defs"
 ```
 
 ```{r}
-dem <- crop(dem, extent(tirol))
-sp <- SpatialPoints(coordinates(dem), proj4string = crs(tirol))
+dem <- crop(DEM, extent(tirol))
+sp <- SpatialPoints(coordinates(dem), proj4string = tirol@proj4string)
+
+
 take <- which(!is.na(over(sp, tirol)))
-values(dem)[!take] <- NA
+dem[setdiff(1:length(dem), take)] <- NA
 newdata <- as.data.frame(coordinates(dem))
 names(newdata) <- c("lon","lat")
 newdata$alt <- values(dem)
-newdata <- newdata[take, ]
+newdata <-newdata[take,]
+
+
 newdata <- newdata %>%
   mutate(
     lat_dist_km = (lat - reference_lat) * (pi / 180) * 6371,
@@ -161,44 +175,104 @@ newdata <- newdata %>%
 #also calculate the long and lateral distance 
 head(newdata)
 ```
+We created new data frames where we added the daily sum of global radiation for the dates we use to predict (in another R script). Here we only load them.
 
 ```{r}
-date <- as.POSIXlt("2019-12-01")
+testdata_20231117 <- readRDS("df_2023_11_17.rds")
+head(testdata_20231117)
+```
+
+```{r}
+testdata_20231222 <- readRDS("df_2023_12_22.rds")
+head(test_data20231222)
+```
+
+```{r}
+#testdata_20240306 <- readRDS("df_2023_03_06")
+#head(test_data20231222)
+```
+
+```{r}
+date <- as.POSIXlt("2023-11-17")
 newdata$yday <- date$yday
-Smodelsimpl <- predict(SnowModellsimpl, newdata = newdata)
+SnowdepthA <- predict(SModA, newdata = testdata_20231117)
+SnowdepthB <- predict(SModB, newdata = testdata_20231117)
 ```
 
 ```{r}
 res <- dem
 values(res) <- NA #initialize
-res <- stack(res)
-names(res) <- c("snowdepth")
+res <- stack(res, res)
+names(res) <- c("snowdepthA", "snowdepthB")
 
 # Then store the estimates (predictions)
-values(res$snowdepth)[take] <- Smodelsimpl
+res$snowdepthA[take] <- SnowdepthA
+res$snowdepthB[take] <- SnowdepthB
 ```
 
 ```{r}
-plot(res$snowdepth, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
+plot(res$snowdepthA, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Snowdepth SModA %s", strftime(date, "%b %d")))
 ```
+
+```{r}
+plot(res$snowdepthB, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Snowdepth SModB %s", strftime(date, "%b %d")))
+```
+
+
 ### Difference for 24h and 48 h
 ```{r}
-date <- as.POSIXlt("2019-12-02")
+date <- as.POSIXlt("2023-11-18")
 newdata$yday <- date$yday
-Smodelsimpl24 <- predict(SnowModellsimpl, newdata = newdata)
-snow_depth_diff <- Smodelsimpl24 - Smodelsimpl
+SnowdepthB24 <- predict(SModB, newdata = testdata_20231117)
+snow_depth_diff <- SnowdepthB24 - SnowdepthB
+```
+
+```{r}
+date <- as.POSIXlt("2023-11-19")
+newdata$yday <- date$yday
+SnowdepthB48 <- predict(SModB, newdata = testdata_20231117)
+snow_depth_diff48 <- SnowdepthB48 - SnowdepthB
 ```
 
 ```{r}
 res <- dem
 values(res) <- NA #initialize
-res <- stack(res)
-names(res) <- c("snowdepth24diff")
+res <- stack(res, res)
+names(res) <- c("snowdepth24diff", "snowdepth48diff")
 
 # Then store the estimates (predictions)
-values(res$snowdepth24diff)[take] <- snow_depth_diff
+res$snowdepth48diff[take] <- snow_depth_diff48
 ```
 
 ```{r}
-plot(res$snowdepth24diff, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Daily mean temperature simple model %s", strftime(date, "%b %d")))
+plot(res$snowdepth24diff, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("24h snowdepth difference 2023-11-17 & 2023-11-18 SModB"))
+```
+
+```{r}
+plot(res$snowdepth48diff, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("48h snowdepth difference 2023-11-17 & 2023-11-19 SModB"))
+```
+```{r}
+date <- as.POSIXlt("2023-12-22")
+newdata$yday <- date$yday
+SnowdepthA <- predict(SModA, newdata = testdata_20231222)
+SnowdepthB <- predict(SModB, newdata = testdata_20231222)
+```
+
+```{r}
+res <- dem
+values(res) <- NA #initialize
+res <- stack(res, res)
+names(res) <- c("snowdepthA", "snowdepthB")
+
+# Then store the estimates (predictions)
+res$snowdepthA[take] <- SnowdepthA
+res$snowdepthB[take] <- SnowdepthB
+```
+
+```{r}
+plot(res$snowdepthA, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Snowdepth SModA %s", strftime(date, "%b %d")))
+```
+
+```{r}
+plot(res$snowdepthB, col = diverge_hcl(51, h = c(260, 305),power = 1), main = sprintf("Snowdepth SModB %s", strftime(date, "%b %d")))
 ```
